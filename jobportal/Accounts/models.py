@@ -14,13 +14,13 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
-
-
 class Company(models.Model):
     name = models.CharField(max_length=100)
     location = models.CharField(max_length=100)
     description = models.TextField()
     owner = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={'role': 'employer'})
+    website = models.URLField(blank=True, null=True)
+    contact_email = models.EmailField(blank=True, null=True)
 
     def __str__(self):
         return self.name
