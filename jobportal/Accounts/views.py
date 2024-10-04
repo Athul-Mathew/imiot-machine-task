@@ -15,6 +15,13 @@ from django.utils.encoding import force_bytes
 from rest_framework.permissions import AllowAny
 from django.http import HttpResponse
 from django.utils.encoding import force_str
+from rest_framework import viewsets
+from .models import Company, JobListing, JobApplication
+from .serializers import CompanySerializer, JobListingSerializer, JobApplicationSerializer
+from .permissions import *
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter
+from rest_framework.pagination import PageNumberPagination
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -92,3 +99,63 @@ def Activate(request, uidb64, token):
         return HttpResponse('Thank you for confirming your email. Your account is now active.')
     else:
         return HttpResponse('Activation link is invalid!')        
+
+#pagination
+
+
+class JobListingPagination(PageNumberPagination):
+    page_size = 10  # Number of items per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+#job applications
+
+
+
+class JobListingViewSet(viewsets.ModelViewSet):
+    queryset = JobListing.objects.all()
+    serializer_class = JobListingSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    search_fields = ['title', 'company__name', 'location']
+    filterset_fields = ['salary', 'location', 'is_active']
+    pagination_class = JobListingPagination
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsEmployerOrAdmin()]  # Employers and Admins can manage
+        return [permissions.IsAuthenticated()]  # Candidates can view
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'employer':
+            # Employers can manage their own company's job listings
+            return JobListing.objects.filter(company=user.company)
+        if user.role == 'admin':
+            # Admins can access all job listings
+            return JobListing.objects.all()
+        # Candidates can only view active job listings
+        return JobListing.objects.filter(is_active=True)
+
+    def perform_create(self, serializer):
+        # When an employer creates a job listing, it should be linked to their company
+        serializer.save(company=self.request.user.company_set.first())
+
+class CompanyViewSet(viewsets.ModelViewSet):
+    queryset = Company.objects.all()
+    serializer_class = CompanySerializer
+
+class JobApplicationViewSet(viewsets.ModelViewSet):
+    queryset = JobApplication.objects.all()
+    serializer_class = JobApplicationSerializer
+    pagination_class = JobListingPagination  # Apply pagination
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    search_fields = ['job__title', 'candidate__username']  # Search by job title or candidate's username
+    filterset_fields = ['job__location', 'job__salary', 'status']
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsCandidate()]  # Only candidates can apply
+        return [IsEmployerOrAdmin()]
+
+
+

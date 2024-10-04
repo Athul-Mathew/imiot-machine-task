@@ -1,4 +1,5 @@
 from rest_framework import permissions
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 class IsAdmin(permissions.BasePermission):
     """
@@ -22,3 +23,7 @@ class IsCandidate(permissions.BasePermission):
     """
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == 'candidate'
+    
+class IsEmployerOrAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and (request.user.role == 'employer' or request.user.role == 'admin')
