@@ -22,6 +22,7 @@ from .permissions import *
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -60,7 +61,7 @@ class UserRegistration(APIView):
 
             user = serializer.save()
             user.set_password(password)
-            user.is_active = False
+            # user.is_active = False
             if role :
                 if role == "employer":
                     user.is_staff = True
@@ -108,6 +109,18 @@ class JobListingPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+#email notification
+from django.core.mail import send_mail
+from django.conf import settings
+
+def send_email_notification(subject, message, recipient_list):
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        recipient_list,
+        fail_silently=False,
+    )
 #job applications
 
 
@@ -143,6 +156,15 @@ class JobListingViewSet(viewsets.ModelViewSet):
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
+    permission_classes = [IsAuthenticated]  # Only authenticated users can manage companies
+
+    def perform_create(self, serializer):
+        # Set the owner to the logged-in user when creating a company
+        serializer.save(owner=self.request.user)
+
+    def get_queryset(self):
+        # Allow users to see only their company profile
+        return Company.objects.filter(owner=self.request.user)
 
 class JobApplicationViewSet(viewsets.ModelViewSet):
     queryset = JobApplication.objects.all()
@@ -156,6 +178,21 @@ class JobApplicationViewSet(viewsets.ModelViewSet):
         if self.request.method == 'POST':
             return [IsCandidate()]  # Only candidates can apply
         return [IsEmployerOrAdmin()]
+    def perform_create(self, serializer):
+        application = serializer.save()
+        job_title = application.job.title
+        candidate_email = application.candidate.email
+
+        # Send notification to the candidate
+        subject = f'Application submitted for {job_title}'
+        message = f'Thank you for applying to {job_title}. We will review your application soon.'
+        send_email_notification(subject, message, [candidate_email])
+
+        # Send notification to the employer
+        employer_email = application.job.company.contact_email
+        subject = f'New application for {job_title}'
+        message = f'{application.candidate.username} has applied for {job_title}.'
+        send_email_notification(subject, message, [employer_email])
 
 
 

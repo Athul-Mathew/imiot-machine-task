@@ -17,7 +17,7 @@ urlpatterns = [
     path('activate/<uidb64>/<token>/', views.Activate, name='activate'),
     #job applications
 
-    path('jobs/', include(router.urls)),
+    path('', include(router.urls)),
 
   
 ]
