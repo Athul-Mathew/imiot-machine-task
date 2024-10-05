@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'Accounts',
     'debug_toolbar',
     'django_filters',
+    # 'rest_framework.authtoken',
     
     
 ]
@@ -63,13 +64,11 @@ INTERNAL_IPS = [
     '127.0.0.1',
 ]
 REST_FRAMEWORK = {
-    #  'DEFAULT_AUTHENTICATION_CLASSES': [],
+  
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.AllowAny',
-    # ],
+   
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),

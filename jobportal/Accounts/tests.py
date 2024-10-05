@@ -1,91 +1,203 @@
-from django.test import TestCase
-from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, Company, JobListing, JobApplication
-from django.core.files.base import ContentFile
-from rest_framework import status
 from django.urls import reverse
-from django.contrib.auth import get_user_model
+from rest_framework import status
+from rest_framework.test import APITestCase
+from .models import User, Company, JobListing, JobApplication
+from rest_framework_simplejwt.tokens import AccessToken
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.contrib.auth.tokens import default_token_generator
+from rest_framework.authtoken.models import Token
+from django.core.files.base import ContentFile
 
-class APITestCase(TestCase):
+class UserRegistrationTestCase(APITestCase):
+    def test_user_registration(self):
+        url = reverse('user-registration')
+        data = {
+            'username': 'testuser',
+            'email': 'testuser@example.com',
+            'password': 'testpassword',
+            'role': 'candidate',
+        }
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(User.objects.get().email, 'testuser@example.com')
+
+
+class ActivationTestCase(APITestCase):
     def setUp(self):
-        self.client = APIClient()
-        
-        # Create users
-        self.admin_user = User.objects.create_user(username="admin", email="admin@example.com", password="adminpass", role="admin")
-        self.employer_user = User.objects.create_user(username="employer", email="employer@example.com", password="employerpass", role="employer")
-        self.candidate_user = User.objects.create_user(username="candidate", email="candidate@example.com", password="candidatepass", role="candidate")
-
-        # Create company and job
-        self.company = Company.objects.create(name="Test Company", location="Test Location", owner=self.employer_user)
-        self.job = JobListing.objects.create(title="Test Job", company=self.company, location="Test Location", salary=50000)
-       
-    def authenticate(self, user):
-        # Get the JWT token for the user
-        refresh = RefreshToken.for_user(user)
-        
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
-
-    def test_job_listing(self):
-        # Authenticate the candidate user
-        self.authenticate(self.candidate_user)
-        response = self.client.get('/api/jobs/')
-        self.assertEqual(response.status_code, 200)
-
-    def setUp(self):
-        # Create a user with the Candidate role
-        self.user = get_user_model().objects.create_user(
-            username='test_candidate',
-            password='password',
-            email='candidate@example.com'  # Add email if required
+        Company.objects.all().delete()
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='testuser@example.com',
+            password='testpassword',
+            role='candidate'
         )
-        self.user.role = 'Candidate'  # Assuming you have a field for roles
+        self.user.is_active = False
         self.user.save()
 
-        # Create a Company instance
+    def test_activation(self):
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        url = reverse('activate', kwargs={'uidb64': uidb64, 'token': token})
+        response = self.client.get(url)
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(self.user.is_active)
+
+
+class JobListingTestCase(APITestCase):
+    def setUp(self):
+        JobListing.objects.all().delete()
+        User.objects.all().delete()  # Ensure user cleanup too
+        Company.objects.all().delete()
+        self.employer = User.objects.create_user(
+            username='employer',
+            email='employer@example.com',
+            password='employerpassword',
+            role='employer'
+        )
         self.company = Company.objects.create(
-            name='Test Company',  # Name of the company
-            # Add other required fields for Company if necessary...
+            name='Test Company',
+            location='Test Location',
+            description='A test company.',
+            owner=self.employer,
+            contact_email='contact@testcompany.com'
         )
-
-        # Create a JobListing instance with all required fields
         self.job_listing = JobListing.objects.create(
-            title='Test Job Title',  # Title of the job
-            description='This is a test job description.',  # Job description
-            salary=50000,  # Salary for the job
-            company=self.company,  # Assign the Company instance here
-            location='Test Location',  # Job location
-            employment_type='Full-time',  # Type of employment (e.g., Full-time, Part-time)
-            required_experience='2 years',  # Required experience for the job
-            qualifications='Bachelor\'s Degree',  # Required qualifications
-            skills='Python, Django',  # Required skills
-            responsibilities='Develop and maintain web applications.',  # Responsibilities of the job
-            application_deadline='2024-12-31',  # Application deadline
-            # Add any other required fields here...
+            title='Test Job',
+            company=self.company,
+            description='A test job description.',
+            requirements='Test requirements.',
+            location='Test Location',
+            salary=50000,
+            is_active=True
         )
+        self.access_token = AccessToken.for_user(self.employer)
 
-    def test_apply_to_job(self):
-        data = {
-            'candidate': self.user.id,  # Use the user ID here
-            'job_listing': self.job_listing.id,
-            'resume': 'path/to/resume.pdf',  # Example field for resume upload, adjust as needed
-            # Add other fields if needed...
-        }
-        response = self.client.post(reverse('job_application_list'), data, format='multipart')  # Use 'multipart' for file uploads
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-   
-
-
-    def test_job_creation_by_employer(self):
-        self.authenticate(self.employer_user)
+    def test_create_job_listing(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token))
+        url = reverse('joblisting-list')
         data = {
             'title': 'New Job',
-            'company': self.company.id,
-            'location': 'New York',
+            'description': 'New job description.',
+            'requirements': 'New job requirements.',
+            'location': 'New Location',
             'salary': 60000,
-            'description': 'Job Description',
-            'requirements': 'Job Requirements',
+            'is_active': True
         }
-        response = self.client.post('/api/jobs/', data)
-        self.assertEqual(response.status_code, 201)
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(JobListing.objects.count(), 2)  # One existing + one created
+
+    def test_list_job_listings(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token))
+        url = reverse('joblisting-list')
+        response = self.client.get(url)
+        
+        # Print the response data for debugging
+        print("Job Listings Returned:", response.data)  # This will show what listings are present
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 1)  # Only the existing job listing
+
+
+class JobApplicationTestCase(APITestCase):
+    def setUp(self):
+        # Clean up the database
+        Company.objects.all().delete()
+        User.objects.all().delete()
+        JobListing.objects.all().delete()
+
+        # Create the candidate and employer users
+        self.candidate = User.objects.create_user(
+            username='candidate',
+            email='candidate@example.com',
+            password='candidatepassword',
+            role='candidate'
+        )
+        
+
+        self.employer = User.objects.create_user(
+            username='employer',
+            email='employer@example.com',
+            password='employerpassword',
+            role='employer'
+        )
+        
+        self.company = Company.objects.create(
+            name='Test Company',
+            location='Test Location',
+            description='A test company.',
+            owner=self.employer,
+            contact_email='contact@testcompany.com'
+        )
+        
+        self.job_listing = JobListing.objects.create(
+            title='Test Job',
+            company=self.company,
+            description='A test job description.',
+            requirements='Test requirements.',
+            location='Test Location',
+            salary=50000,
+            is_active=True
+        )
+        self.access_token = AccessToken.for_user(self.candidate)
+
+    def test_apply_for_job(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token)) 
+        url = reverse('jobapplication-list')
+
+        # Create a temporary file for the resume
+        resume_file = ContentFile(b'This is a test resume content.', name='resume.pdf')
+
+        data = {
+            'job': self.job_listing.id,
+            'resume': resume_file,
+            'cover_letter': 'This is my cover letter.'
+        }
+
+        response = self.client.post(url, data, format='multipart')  # Ensure it's 'multipart'
+        
+        # Print the response to debug further if needed
+        # print(response.data)
+        
+        # Check if the request was successful
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(JobApplication.objects.count(), 1)
+
+class CompanyTestCase(APITestCase):
+    def setUp(self):
+        Company.objects.all().delete()
+         
+        User.objects.all().delete()
+        self.employer = User.objects.create_user(
+            username='employer',
+            email='employer@example.com',
+            password='employerpassword',
+            role='employer'
+        )
+        self.access_token = AccessToken.for_user(self.employer)
+
+    def test_create_company(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token))
+        url = reverse('company-list')
+        data = {
+            'name': 'New Company',
+            'location': 'New Location',
+            'description': 'New company description.',
+            'contact_email': 'newcompany@example.com'
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Company.objects.count(), 1)
+
+    def test_list_companies(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token))
+        url = reverse('company-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 4)  # No companies yet
+
+
+# Add more tests for other functionalities as needed

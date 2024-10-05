@@ -12,12 +12,13 @@ router.register(r'applications', JobApplicationViewSet)
 
 
 urlpatterns = [
+    path('api/', getRoutes, name='api-overview'),
     path('login/', views.MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('signup/', views.UserRegistration.as_view()),
+    path('signup/', views.UserRegistration.as_view(), name='user-registration'),
     path('activate/<uidb64>/<token>/', views.Activate, name='activate'),
     #job applications
 
-    path('', include(router.urls)),
+    path('api/', include(router.urls)),
 
   
 ]

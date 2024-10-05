@@ -2,6 +2,7 @@ from django.shortcuts import render
 from .models import User
 from .serializers import  UserRegisterSerializer
 from rest_framework.decorators import api_view,permission_classes
+from rest_framework import status,viewsets
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.views import APIView
@@ -15,7 +16,6 @@ from django.utils.encoding import force_bytes
 from rest_framework.permissions import AllowAny
 from django.http import HttpResponse
 from django.utils.encoding import force_str
-from rest_framework import viewsets
 from .models import Company, JobListing, JobApplication
 from .serializers import CompanySerializer, JobListingSerializer, JobApplicationSerializer
 from .permissions import *
@@ -61,7 +61,7 @@ class UserRegistration(APIView):
 
             user = serializer.save()
             user.set_password(password)
-            # user.is_active = False
+            user.is_active = False
             if role :
                 if role == "employer":
                     user.is_staff = True
@@ -77,10 +77,10 @@ class UserRegistration(APIView):
                       f"http://{current_site.domain}/activate/{urlsafe_base64_encode(force_bytes(user.pk))}/{default_token_generator.make_token(user)}\n\n" \
                       f"Thank you for registering."
 
-            #send_email = EmailMessage(mail_subject, message, to=[email])
-            #send_email.send()
+            send_email = EmailMessage(mail_subject, message, to=[email])
+            send_email.send()
 
-            return Response({'status': 'success', 'msg': 'A verificaiton link sent to your registered email address', "data": serializer.data,'msgs':message})
+            return Response({'status': 'success', 'msg': 'A verificaiton link sent to your registered email address', "data": serializer.data,},status=status.HTTP_201_CREATED)
         else:
             return Response({'status': 'error', 'msg': serializer.errors})
 
@@ -142,7 +142,7 @@ class JobListingViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'employer':
             # Employers can manage their own company's job listings
-            return JobListing.objects.filter(company=user.company)
+            return JobListing.objects.filter(company__owner=user)
         if user.role == 'admin':
             # Admins can access all job listings
             return JobListing.objects.all()
@@ -169,6 +169,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
 class JobApplicationViewSet(viewsets.ModelViewSet):
     queryset = JobApplication.objects.all()
     serializer_class = JobApplicationSerializer
+    permission_classes = [IsAuthenticated]
     pagination_class = JobListingPagination  # Apply pagination
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ['job__title', 'candidate__username']  # Search by job title or candidate's username
@@ -178,10 +179,19 @@ class JobApplicationViewSet(viewsets.ModelViewSet):
         if self.request.method == 'POST':
             return [IsCandidate()]  # Only candidates can apply
         return [IsEmployerOrAdmin()]
+    
+    
     def perform_create(self, serializer):
-        application = serializer.save()
+        candidate = self.request.user
+        job_id = self.request.data.get('job')  # Get the job ID from the request data
+        job = JobListing.objects.get(id=job_id)  # Retrieve the JobListing instance
+
+        # Create the application, setting the candidate and job
+        application = serializer.save(candidate=candidate, job=job)
+
+        # Prepare email notifications
         job_title = application.job.title
-        candidate_email = application.candidate.email
+        candidate_email = candidate.email
 
         # Send notification to the candidate
         subject = f'Application submitted for {job_title}'

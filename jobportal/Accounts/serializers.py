@@ -38,7 +38,8 @@ class JobListingSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'description', 'requirements', 'location', 'salary', 'created_at', 'is_active', 'company']
 
 class JobApplicationSerializer(serializers.ModelSerializer):
-    job = JobListingSerializer(read_only=True)
+    job = serializers.PrimaryKeyRelatedField(queryset=JobListing.objects.all())
+
     candidate = UserSerializer(read_only=True)
 
     class Meta:
