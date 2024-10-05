@@ -49,7 +49,7 @@ class ActivationTestCase(APITestCase):
 class JobListingTestCase(APITestCase):
     def setUp(self):
         JobListing.objects.all().delete()
-        User.objects.all().delete()  # Ensure user cleanup too
+        User.objects.all().delete() 
         Company.objects.all().delete()
         self.employer = User.objects.create_user(
             username='employer',
@@ -88,19 +88,18 @@ class JobListingTestCase(APITestCase):
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(JobListing.objects.count(), 2)  # One existing + one created
+        self.assertEqual(JobListing.objects.count(), 2)  
 
     def test_list_job_listings(self):
         self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(self.access_token))
         url = reverse('joblisting-list')
         response = self.client.get(url)
         
-        # Print the response data for debugging
-        print("Job Listings Returned:", response.data)  # This will show what listings are present
+       
+        print("Job Listings Returned:", response.data)  
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 1)  # Only the existing job listing
-
+        self.assertEqual(len(response.data['results']), 1)  
 
 class JobApplicationTestCase(APITestCase):
     def setUp(self):
@@ -157,12 +156,10 @@ class JobApplicationTestCase(APITestCase):
             'cover_letter': 'This is my cover letter.'
         }
 
-        response = self.client.post(url, data, format='multipart')  # Ensure it's 'multipart'
+        response = self.client.post(url, data, format='multipart') 
         
-        # Print the response to debug further if needed
-        # print(response.data)
-        
-        # Check if the request was successful
+      
+       
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(JobApplication.objects.count(), 1)
 
@@ -200,4 +197,4 @@ class CompanyTestCase(APITestCase):
         self.assertEqual(len(response.data), 4)  # No companies yet
 
 
-# Add more tests for other functionalities as needed
+

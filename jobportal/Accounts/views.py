@@ -24,7 +24,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 
-
+#REGISTRATION
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -85,7 +85,7 @@ class UserRegistration(APIView):
             return Response({'status': 'error', 'msg': serializer.errors})
 
 @api_view(['GET'])
-
+#ACTIVATION OF THE ACCOUNT
 @permission_classes([AllowAny])
 def Activate(request, uidb64, token):
     try:
@@ -95,17 +95,15 @@ def Activate(request, uidb64, token):
         user = None
 
     if user is not None and default_token_generator.check_token(user, token):
-        user.is_active = True  # Activate the user's account
+        user.is_active = True 
         user.save()
         return HttpResponse('Thank you for confirming your email. Your account is now active.')
     else:
         return HttpResponse('Activation link is invalid!')        
 
-#pagination
-
-
+#PAGINATION
 class JobListingPagination(PageNumberPagination):
-    page_size = 10  # Number of items per page
+    page_size = 10 
     page_size_query_param = 'page_size'
     max_page_size = 100
 
@@ -121,10 +119,7 @@ def send_email_notification(subject, message, recipient_list):
         recipient_list,
         fail_silently=False,
     )
-#job applications
-
-
-
+#JOB APPLICATIONS
 class JobListingViewSet(viewsets.ModelViewSet):
     queryset = JobListing.objects.all()
     serializer_class = JobListingSerializer
@@ -135,70 +130,62 @@ class JobListingViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsEmployerOrAdmin()]  # Employers and Admins can manage
-        return [permissions.IsAuthenticated()]  # Candidates can view
+            return [IsEmployerOrAdmin()] 
+        return [permissions.IsAuthenticated()] 
 
     def get_queryset(self):
         user = self.request.user
         if user.role == 'employer':
-            # Employers can manage their own company's job listings
             return JobListing.objects.filter(company__owner=user)
         if user.role == 'admin':
-            # Admins can access all job listings
             return JobListing.objects.all()
-        # Candidates can only view active job listings
         return JobListing.objects.filter(is_active=True)
 
     def perform_create(self, serializer):
-        # When an employer creates a job listing, it should be linked to their company
         serializer.save(company=self.request.user.company_set.first())
 
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
-    permission_classes = [IsAuthenticated]  # Only authenticated users can manage companies
+    permission_classes = [IsAuthenticated]  
 
     def perform_create(self, serializer):
-        # Set the owner to the logged-in user when creating a company
         serializer.save(owner=self.request.user)
 
     def get_queryset(self):
-        # Allow users to see only their company profile
         return Company.objects.filter(owner=self.request.user)
 
 class JobApplicationViewSet(viewsets.ModelViewSet):
     queryset = JobApplication.objects.all()
     serializer_class = JobApplicationSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = JobListingPagination  # Apply pagination
+    pagination_class = JobListingPagination 
     filter_backends = [DjangoFilterBackend, SearchFilter]
-    search_fields = ['job__title', 'candidate__username']  # Search by job title or candidate's username
+    search_fields = ['job__title', 'candidate__username']  
     filterset_fields = ['job__location', 'job__salary', 'status']
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsCandidate()]  # Only candidates can apply
+            return [IsCandidate()] 
         return [IsEmployerOrAdmin()]
     
     
     def perform_create(self, serializer):
         candidate = self.request.user
-        job_id = self.request.data.get('job')  # Get the job ID from the request data
-        job = JobListing.objects.get(id=job_id)  # Retrieve the JobListing instance
-
-        # Create the application, setting the candidate and job
+        job_id = self.request.data.get('job') 
+        job = JobListing.objects.get(id=job_id)  
         application = serializer.save(candidate=candidate, job=job)
 
-        # Prepare email notifications
+# Prepare email notifications
         job_title = application.job.title
         candidate_email = candidate.email
 
-        # Send notification to the candidate
+# Send notification to the candidate
         subject = f'Application submitted for {job_title}'
         message = f'Thank you for applying to {job_title}. We will review your application soon.'
         send_email_notification(subject, message, [candidate_email])
 
-        # Send notification to the employer
+# Send notification to the employer
         employer_email = application.job.company.contact_email
         subject = f'New application for {job_title}'
         message = f'{application.candidate.username} has applied for {job_title}.'
